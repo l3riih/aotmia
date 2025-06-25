@@ -1,0 +1,37 @@
+fastapi
+uvicorn[standard]
+pydantic
+structlog
+
+# Agentes y LLM
+langchain
+langgraph
+langchain-openai
+langchain-community
+
+# Base de datos
+motor  # MongoDB async
+pymongo
+
+# Cache
+redis
+aioredis
+
+# HTTP Client
+httpx
+
+# Utils
+python-multipart  # Para upload de archivos
+pypdf  # Para extracción de texto de PDF
+python-jose[cryptography]  # JWT tokens
+passlib[bcrypt]  # Password hashing
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-mock==3.12.0
+
+# Development
+black==23.11.0
+isort==5.12.0
+mypy==1.7.1

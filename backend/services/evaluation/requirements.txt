@@ -1,0 +1,38 @@
+# Core
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# Async HTTP
+httpx
+aiofiles
+
+# Database
+asyncpg
+psycopg2-binary
+sqlalchemy
+alembic
+
+# Cache
+redis
+hiredis
+
+# Logging
+structlog
+python-json-logger
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+
+# Monitoring
+prometheus-client
+
+# Utils
+python-multipart
+python-dotenv
+
+# Dependencias compartidas (desde requirements-base.txt)
+# redis, motor, langchain, etc. 

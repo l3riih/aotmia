@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pydantic
+asyncpg
+motor
+redis
+neo4j-driver
+aio_pika
+python-dotenv
+alembic
+pytest
+psycopg2-binary 

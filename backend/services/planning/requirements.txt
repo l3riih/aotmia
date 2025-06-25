@@ -1,0 +1,38 @@
+# Core
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# Async HTTP
+httpx
+aiofiles
+
+# Database
+asyncpg
+sqlalchemy
+alembic
+
+# Cache
+redis
+hiredis
+
+# Logging
+structlog
+python-json-logger
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0
+
+# Monitoring
+prometheus-client
+
+# Scientific Computing (para algoritmos)
+numpy
+scipy
+
+# Utils
+python-multipart
+python-dotenv 
