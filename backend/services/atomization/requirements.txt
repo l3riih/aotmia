@@ -1,37 +1,40 @@
 fastapi
 uvicorn[standard]
 pydantic
+motor
+redis
+httpx
+python-multipart
 structlog
-
-# Agentes y LLM
+lxml
+beautifulsoup4
 langchain
-langgraph
-langchain-openai
 langchain-community
+langchain-openai
+openai
+tiktoken
+numpy
+tenacity
+jinja2
+
+# Document parsing dependencies
+pypdf
+python-docx
+markdown
+ebooklib
 
 # Base de datos
-motor  # MongoDB async
 pymongo
-
-# Cache
-redis
 aioredis
+neo4j
 
-# HTTP Client
-httpx
-
-# Utils
-python-multipart  # Para upload de archivos
-pypdf  # Para extracción de texto de PDF
-python-jose[cryptography]  # JWT tokens
-passlib[bcrypt]  # Password hashing
+# Utilities
+python-dateutil
 
 # Testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
-pytest-mock==3.12.0
+pytest
+pytest-asyncio
 
-# Development
-black==23.11.0
-isort==5.12.0
-mypy==1.7.1
+# Code quality
+black
+isort

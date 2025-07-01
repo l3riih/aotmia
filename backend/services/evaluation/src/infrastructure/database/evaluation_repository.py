@@ -3,154 +3,242 @@ Repositorio para persistencia de evaluaciones en PostgreSQL.
 Maneja el almacenamiento y recuperación de evaluaciones educativas.
 """
 
-import asyncpg
-import json
 from typing import Dict, Any, Optional, List
+import asyncio
+import structlog
 from datetime import datetime
-from uuid import UUID
-import logging
-from ...core.config import get_settings
-from ...core.logging import get_logger
-from ...schemas import (
-    EvaluationRequest,
-    EvaluationResponse,
-    FeedbackDetail,
-    LearningProgress,
-    AgentMetadata,
-    Misconception
-)
-from sqlalchemy import MetaData, Table, Column, String, Float, DateTime, JSON, create_engine, inspect, PrimaryKeyConstraint
-from sqlalchemy.ext.asyncio import create_async_engine
-import uuid
-import sqlalchemy as sa
+from sqlalchemy import MetaData, Table, Column, String, Float, DateTime, JSON, Integer
+from sqlalchemy import insert, update as sa_update, select, delete as sa_delete
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, AsyncEngine
+from sqlalchemy.orm import sessionmaker as _sm
 
-logger = get_logger(__name__)
-settings = get_settings()
+from ...schemas import EvaluationResponse
 
-# Definición de la tabla de evaluaciones con SQLAlchemy
-metadata = sa.MetaData()
+logger = structlog.get_logger()
 
-evaluations = sa.Table(
-    'evaluations', metadata,
-    sa.Column('evaluation_id', sa.String, primary_key=True),
-    sa.Column('user_id', sa.String, nullable=False, index=True),
-    sa.Column('question_id', sa.String, nullable=False, index=True),
-    sa.Column('score', sa.Float, nullable=False),
-    sa.Column('feedback', sa.JSON, nullable=False),
-    sa.Column('misconceptions_detected', sa.JSON, default=[]),
-    sa.Column('learning_progress', sa.JSON, nullable=False),
-    sa.Column('agent_metadata', sa.JSON, nullable=False),
-    sa.Column('key_concepts_understood', sa.JSON, default=[]),
-    sa.Column('next_recommended_topics', sa.JSON, default=[]),
-    sa.Column('estimated_time_to_mastery', sa.Integer, default=60),
-    sa.Column('created_at', sa.DateTime, default=datetime.utcnow),
+metadata = MetaData()
+
+# Tabla de evaluaciones
+evaluations_table = Table(
+    "evaluations",
+    metadata,
+    Column("evaluation_id", String, primary_key=True),
+    Column("user_id", String, nullable=False, index=True),
+    Column("question_id", String, nullable=False, index=True),
+    Column("atom_id", String, nullable=True, index=True),
+    Column("score", Float, nullable=False),
+    Column("evaluation_data", JSON, nullable=False),  # objeto completo de la evaluación
+    Column("created_at", DateTime, default=datetime.utcnow),
+    Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow),
 )
 
-class EvaluationRepository:
-    """
-    Gestiona la persistencia de las evaluaciones de estudiantes.
-    """
-    def __init__(self, database_url: str, pool_size: int = 10):
-        if not database_url:
-            raise ValueError("database_url cannot be empty")
-        self._database_url = database_url  # Para SQLAlchemy
-        # Para asyncpg necesitamos un DSN sin el sufijo +asyncpg
-        if database_url.startswith("postgresql+asyncpg://"):
-            self._dsn_asyncpg = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
-        else:
-            self._dsn_asyncpg = database_url
-        self._pool_size = pool_size
-        self._engine = create_async_engine(database_url, pool_size=pool_size)
-        self._db_pool: Optional[asyncpg.Pool] = None
+# Tabla de progreso de usuario
+user_progress_table = Table(
+    "user_progress",
+    metadata,
+    Column("user_id", String, primary_key=True),
+    Column("atom_id", String, primary_key=True),
+    Column("mastery_level", Float, default=0.0),
+    Column("total_attempts", Integer, default=0),
+    Column("correct_attempts", Integer, default=0),
+    Column("last_evaluation_id", String, nullable=True),
+    Column("last_updated", DateTime, default=datetime.utcnow),
+)
 
-    async def connect(self):
-        """Inicializa la conexión a la base de datos y crea la tabla si no existe."""
-        if self._db_pool:
-            return
+class PostgresEvaluationRepository:
+    """
+    Repositorio para la gestión de datos de evaluación en PostgreSQL.
+    - Guarda evaluaciones de respuestas de usuarios
+    - Rastrea el progreso de aprendizaje por átomo
+    - Proporciona métricas de rendimiento
+    """
+
+    async def _init_db(self):
+        async with self.engine.begin() as conn:
+            await conn.run_sync(metadata.create_all)
+
+    def __init__(self, database_url: str):
         try:
-            self._db_pool = await asyncpg.create_pool(
-                dsn=self._dsn_asyncpg,
-                min_size=1, # Start with 1 connection
-                max_size=self._pool_size
-            )
-            async with self._engine.begin() as conn:
-                await conn.run_sync(metadata.create_all)
-            logger.info("Database pool connected and table 'evaluations' verified.")
+            self.engine: AsyncEngine = create_async_engine(database_url, echo=False, future=True)
+            self.async_session: _sm[AsyncSession] = _sm(bind=self.engine, class_=AsyncSession, expire_on_commit=False)
+            self._init_task = asyncio.create_task(self._init_db())
+            logger.info("PostgresEvaluationRepository initialized", db_url=database_url)
         except Exception as e:
-            logger.error("Failed to connect to the database", error=str(e))
-            self._db_pool = None
+            logger.error("Failed to initialize PostgresEvaluationRepository", error=str(e))
             raise
-    
-    async def disconnect(self):
-        """Cierra la conexión a la base de datos."""
-        if self._db_pool:
-            await self._db_pool.close()
-            self._db_pool = None
-            logger.info("Database pool disconnected.")
 
-    async def save_evaluation(self, evaluation: EvaluationResponse, user_id: str, question_id: str) -> str:
+    async def save_evaluation(self, evaluation: EvaluationResponse, user_id: str, question_id: str, atom_id: Optional[str] = None) -> str:
         """Guarda una nueva evaluación en la base de datos."""
-        if self._db_pool is None:
-            await self.connect()
-        
-        async with self._engine.begin() as conn:
-            query = evaluations.insert().values(
+        await self._init_task
+        async with self.async_session() as session:
+            stmt = insert(evaluations_table).values(
                 evaluation_id=evaluation.evaluation_id,
                 user_id=user_id,
                 question_id=question_id,
+                atom_id=atom_id,
                 score=evaluation.score,
-                feedback=evaluation.feedback.dict(),
-                misconceptions_detected=[m.dict() for m in evaluation.misconceptions_detected],
-                learning_progress=evaluation.learning_progress.dict(),
-                agent_metadata=evaluation.agent_metadata.dict(),
-                key_concepts_understood=evaluation.key_concepts_understood,
-                next_recommended_topics=evaluation.next_recommended_topics,
-                estimated_time_to_mastery=evaluation.estimated_time_to_mastery,
+                evaluation_data=evaluation.model_dump(mode='json'),
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
             )
-            await conn.execute(query)
-            logger.info("Saved evaluation to DB", evaluation_id=evaluation.evaluation_id)
+            await session.execute(stmt)
+            await session.commit()
+            logger.info("Evaluation saved", evaluation_id=evaluation.evaluation_id, user_id=user_id)
             return evaluation.evaluation_id
-    
-    async def get_evaluation_by_id(self, evaluation_id: str) -> Optional[Dict[str, Any]]:
+
+    async def get_evaluation_by_id(self, evaluation_id: str) -> Optional[EvaluationResponse]:
         """Obtiene una evaluación por su ID."""
-        if self._db_pool is None:
-            await self.connect()
-
-        async with self._engine.begin() as conn:
-            query = evaluations.select().where(evaluations.c.evaluation_id == evaluation_id)
-            result = await conn.execute(query)
+        await self._init_task
+        async with self.async_session() as session:
+            stmt = select(evaluations_table).where(evaluations_table.c.evaluation_id == evaluation_id)
+            result = await session.execute(stmt)
             row = result.fetchone()
-            return dict(row._mapping) if row else None
+            if not row:
+                return None
+            record = dict(row._mapping)
+            return EvaluationResponse(**record["evaluation_data"])
 
-    async def get_user_evaluations(self, user_id: str, question_id: Optional[str] = None, limit: int = 20) -> List[Dict[str, Any]]:
-        """Obtiene las últimas evaluaciones de un usuario (opcionalmente por pregunta)."""
-        if self._db_pool is None:
-            await self.connect()
-        async with self._engine.begin() as conn:
-            query = evaluations.select().where(evaluations.c.user_id == user_id)
+    async def get_user_evaluations(self, user_id: str, question_id: Optional[str] = None, atom_id: Optional[str] = None, limit: int = 20) -> List[EvaluationResponse]:
+        """Obtiene las últimas evaluaciones de un usuario."""
+        await self._init_task
+        async with self.async_session() as session:
+            stmt = select(evaluations_table).where(evaluations_table.c.user_id == user_id)
+            
             if question_id:
-                query = query.where(evaluations.c.question_id == question_id)
-            query = query.order_by(sa.desc(evaluations.c.created_at)).limit(limit)
-            result = await conn.execute(query)
+                stmt = stmt.where(evaluations_table.c.question_id == question_id)
+            if atom_id:
+                stmt = stmt.where(evaluations_table.c.atom_id == atom_id)
+                
+            stmt = stmt.order_by(evaluations_table.c.created_at.desc()).limit(limit)
+            result = await session.execute(stmt)
             rows = result.fetchall()
-            return [dict(r._mapping) for r in rows]
+            
+            evaluations = []
+            for row in rows:
+                record = dict(row._mapping)
+                evaluations.append(EvaluationResponse(**record["evaluation_data"]))
+            return evaluations
 
-    async def update_user_progress(self, user_id: str, atom_id: str, mastery_level: float):
-        # Esta lógica puede ser más compleja y requerir su propia tabla,
-        # por ahora es un placeholder.
-        logger.info("Updating user progress (placeholder)", user_id=user_id, atom_id=atom_id, mastery=mastery_level)
-        pass
+    async def update_user_progress(self, user_id: str, atom_id: str, evaluation_id: str, correct: bool, score: float):
+        """Actualiza el progreso del usuario para un átomo específico."""
+        await self._init_task
+        async with self.async_session() as session:
+            # Buscar progreso existente
+            stmt = select(user_progress_table).where(
+                user_progress_table.c.user_id == user_id,
+                user_progress_table.c.atom_id == atom_id
+            )
+            result = await session.execute(stmt)
+            existing = result.fetchone()
+            
+            if existing:
+                # Actualizar progreso existente
+                record = dict(existing._mapping)
+                new_total = record["total_attempts"] + 1
+                new_correct = record["correct_attempts"] + (1 if correct else 0)
+                new_mastery = min(new_correct / new_total, 1.0) if new_total > 0 else 0.0
+                
+                # Aplicar factor de recencia - evaluaciones más recientes pesan más
+                new_mastery = (record["mastery_level"] * 0.7) + (score * 0.3)
+                new_mastery = max(0.0, min(1.0, new_mastery))
+                
+                update_stmt = sa_update(user_progress_table).where(
+                    user_progress_table.c.user_id == user_id,
+                    user_progress_table.c.atom_id == atom_id
+                ).values(
+                    mastery_level=new_mastery,
+                    total_attempts=new_total,
+                    correct_attempts=new_correct,
+                    last_evaluation_id=evaluation_id,
+                    last_updated=datetime.utcnow()
+                )
+                await session.execute(update_stmt)
+            else:
+                # Crear nuevo registro de progreso
+                mastery_level = score  # Primera evaluación define el nivel inicial
+                insert_stmt = insert(user_progress_table).values(
+                    user_id=user_id,
+                    atom_id=atom_id,
+                    mastery_level=mastery_level,
+                    total_attempts=1,
+                    correct_attempts=1 if correct else 0,
+                    last_evaluation_id=evaluation_id,
+                    last_updated=datetime.utcnow()
+                )
+                await session.execute(insert_stmt)
+            
+            await session.commit()
+            logger.info("User progress updated", user_id=user_id, atom_id=atom_id, score=score)
 
-# Instancia singleton
-_evaluation_repository: Optional[EvaluationRepository] = None
+    async def get_user_progress(self, user_id: str, atom_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Obtiene el progreso de un usuario."""
+        await self._init_task
+        async with self.async_session() as session:
+            stmt = select(user_progress_table).where(user_progress_table.c.user_id == user_id)
+            
+            if atom_id:
+                stmt = stmt.where(user_progress_table.c.atom_id == atom_id)
+                
+            stmt = stmt.order_by(user_progress_table.c.last_updated.desc())
+            result = await session.execute(stmt)
+            rows = result.fetchall()
+            
+            return [dict(row._mapping) for row in rows]
 
-async def get_repository() -> EvaluationRepository:
-    """Función de dependencia para obtener la instancia del repositorio."""
-    global _evaluation_repository
-    if _evaluation_repository is None:
-        db_url = settings.DATABASE_URL
-        if not db_url:
-            raise ValueError("DATABASE_URL environment variable is not set.")
-        _evaluation_repository = EvaluationRepository(db_url)
-        await _evaluation_repository.connect()
-    return _evaluation_repository 
+    async def get_mastery_stats(self, user_id: str) -> Dict[str, Any]:
+        """Obtiene estadísticas de dominio del usuario."""
+        await self._init_task
+        async with self.async_session() as session:
+            # Contar total de átomos
+            total_stmt = select(user_progress_table.c.atom_id).where(user_progress_table.c.user_id == user_id)
+            total_result = await session.execute(total_stmt)
+            total_atoms = len(total_result.fetchall())
+            
+            # Contar átomos dominados (mastery >= 0.8)
+            mastered_stmt = select(user_progress_table.c.atom_id).where(
+                user_progress_table.c.user_id == user_id,
+                user_progress_table.c.mastery_level >= 0.8
+            )
+            mastered_result = await session.execute(mastered_stmt)
+            mastered_atoms = len(mastered_result.fetchall())
+            
+            # Promedio de dominio
+            avg_stmt = select(user_progress_table.c.mastery_level).where(user_progress_table.c.user_id == user_id)
+            avg_result = await session.execute(avg_stmt)
+            mastery_levels = [row[0] for row in avg_result.fetchall()]
+            avg_mastery = sum(mastery_levels) / len(mastery_levels) if mastery_levels else 0.0
+            
+            return {
+                "total_atoms": total_atoms,
+                "mastered_atoms": mastered_atoms,
+                "mastery_percentage": (mastered_atoms / total_atoms * 100) if total_atoms > 0 else 0.0,
+                "average_mastery": avg_mastery,
+                "atoms_in_progress": total_atoms - mastered_atoms
+            }
+
+    async def get_evaluation_stats(self) -> Dict[str, Any]:
+        """Obtiene estadísticas generales de evaluaciones."""
+        await self._init_task
+        async with self.async_session() as session:
+            # Total de evaluaciones
+            total_stmt = select(evaluations_table.c.evaluation_id)
+            total_result = await session.execute(total_stmt)
+            total_evaluations = len(total_result.fetchall())
+            
+            # Promedio de scores
+            score_stmt = select(evaluations_table.c.score)
+            score_result = await session.execute(score_stmt)
+            scores = [row[0] for row in score_result.fetchall()]
+            avg_score = sum(scores) / len(scores) if scores else 0.0
+            
+            # Usuarios únicos
+            users_stmt = select(evaluations_table.c.user_id).distinct()
+            users_result = await session.execute(users_stmt)
+            unique_users = len(users_result.fetchall())
+            
+            return {
+                "total_evaluations": total_evaluations,
+                "average_score": avg_score,
+                "unique_users": unique_users,
+                "evaluations_per_user": total_evaluations / unique_users if unique_users > 0 else 0.0
+            } 

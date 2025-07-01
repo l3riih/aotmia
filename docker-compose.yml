@@ -1,0 +1,186 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: atomia_user
+      POSTGRES_PASSWORD: atomia_password
+      POSTGRES_DB: atomia_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  mongodb:
+    image: mongo:7
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  neo4j:
+    image: neo4j:5
+    restart: always
+    environment:
+      NEO4J_AUTH: none
+    ports:
+      - "7474:7474"   # HTTP
+      - "7687:7687"   # Bolt
+    volumes:
+      - neo4j_data:/data
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: always
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  llm_orchestrator:
+    build: ./backend/services/llm_orchestrator
+    ports:
+      - "8002:8002"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      DATABASE_URL: postgresql+asyncpg://atomia_user:atomia_password@postgres:5432/atomia_dev
+      AZURE_AI_KEY: ${AZURE_AI_KEY:-demo-key-for-testing}
+
+  atomization:
+    build: ./backend/services/atomization
+    ports:
+      - "8001:8001"
+    depends_on:
+      - llm_orchestrator
+      - mongodb
+      - redis
+      - neo4j
+    environment:
+      MONGODB_HOST: mongodb
+      REDIS_HOST: redis
+      NEO4J_HOST: neo4j
+      LLM_ORCHESTRATOR_URL: http://llm_orchestrator:8002
+      MONGODB_URL: mongodb://mongodb:27017
+      MONGODB_DB_NAME: atomia_atoms
+
+  evaluation:
+    build: ./backend/services/evaluation
+    ports:
+      - "8003:8003"
+    depends_on:
+      - llm_orchestrator
+      - postgres
+      - redis
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      LLM_ORCHESTRATOR_URL: http://llm_orchestrator:8002
+      DATABASE_URL: postgresql+asyncpg://atomia_user:atomia_password@postgres:5432/atomia_dev
+
+  planning:
+    build: ./backend/services/planning
+    ports:
+      - "8004:8004"
+    depends_on:
+      - llm_orchestrator
+      - postgres
+      - redis
+      - neo4j
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      NEO4J_HOST: neo4j
+      LLM_ORCHESTRATOR_URL: http://llm_orchestrator:8002
+      DATABASE_URL: postgresql+asyncpg://atomia_user:atomia_password@postgres:5432/atomia_dev
+
+  questions:
+    build: ./backend/services/questions
+    ports:
+      - "8005:8005"
+    depends_on:
+      - llm_orchestrator
+      - postgres
+      - redis
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      LLM_ORCHESTRATOR_URL: http://llm_orchestrator:8002
+      DATABASE_URL: postgresql+asyncpg://atomia_user:atomia_password@postgres:5432/atomia_dev
+
+  gamification:
+    build: ./backend/services/gamification
+    ports:
+      - "8006:8006"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_DB: 2
+      LLM_ORCHESTRATOR_URL: http://llm_orchestrator:8002
+      EVALUATION_SERVICE_URL: http://evaluation:8003
+      PLANNING_SERVICE_URL: http://planning:8004
+      POSTGRES_USER: atomia_user
+      POSTGRES_PASSWORD: atomia_password
+      POSTGRES_DB: atomia_dev
+
+  authentication:
+    build: ./backend/services/authentication
+    ports:
+      - "8007:8007"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      REDIS_DB: 3
+      GAMIFICATION_SERVICE_URL: http://gamification:8006
+      POSTGRES_USER: atomia_user
+      POSTGRES_PASSWORD: atomia_password
+      POSTGRES_DB: atomia_dev
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-super-secret-jwt-key-change-in-production}
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - llm_orchestrator
+      - atomization
+      - evaluation
+      - planning
+      - questions
+    environment:
+      # URLs de servicios backend para el frontend
+      LLM_ORCHESTRATOR_URL: http://llm_orchestrator:8002
+      ATOMIZATION_URL: http://atomization:8001
+      EVALUATION_URL: http://evaluation:8003
+      PLANNING_URL: http://planning:8004
+      QUESTIONS_URL: http://questions:8005
+      GAMIFICATION_URL: http://gamification:8006
+      AUTHENTICATION_URL: http://authentication:8007
+
+volumes:
+  postgres_data:
+  redis_data:
+  mongo_data:
+  neo4j_data:
+  rabbitmq_data: 

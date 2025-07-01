@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 import json
 import re
 
-from ....src.schemas import (
+from ...schemas import (
     QuestionGenerationRequest, QuestionGenerationResponse, GeneratedQuestion,
     Question, QuestionType
 )

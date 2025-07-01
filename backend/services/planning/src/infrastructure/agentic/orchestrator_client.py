@@ -5,19 +5,16 @@ Cliente para el Orquestador Agéntico
 import httpx
 import structlog
 from typing import Dict, Any, Optional
-from utils.logger import get_logger
-from utils.settings import get_settings
 
-logger = get_logger(__name__)
-settings = get_settings()
+logger = structlog.get_logger(__name__)
 
 
 class OrchestratorClient:
     """Cliente para comunicarse con el servicio LLM Orchestrator"""
     
-    def __init__(self, base_url: str, http_client: httpx.AsyncClient):
+    def __init__(self, base_url: str, timeout: int = 30):
         self.base_url = base_url.rstrip("/")
-        self.http_client = http_client
+        self.timeout = timeout
     
     async def process_educational_task(
         self, 
@@ -41,7 +38,8 @@ class OrchestratorClient:
                 user_id=task.get("user_id")
             )
             
-            response = await self.http_client.post(
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
                 url,
                 json=task,
                 timeout=60.0  # Timeout extendido para tareas complejas
@@ -78,7 +76,8 @@ class OrchestratorClient:
     async def health_check(self) -> bool:
         """Verifica la salud del orquestador"""
         try:
-            response = await self.http_client.get(
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
                 f"{self.base_url}/health",
                 timeout=5.0
             )

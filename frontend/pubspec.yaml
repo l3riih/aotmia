@@ -44,6 +44,9 @@ dependencies:
   bloc: ^8.1.2
   equatable: ^2.0.5
   
+  # Navigation
+  go_router: ^13.2.1
+  
   # UI y Diseño
   flutter_markdown: ^0.6.18
   google_fonts: ^6.1.0
@@ -54,6 +57,7 @@ dependencies:
   intl: ^0.18.1
   uuid: ^4.2.1
   collection: ^1.18.0
+  shared_preferences: ^2.2.2
   
   # Web específico
   web: ^0.5.1

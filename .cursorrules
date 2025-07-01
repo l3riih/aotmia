@@ -572,4 +572,178 @@ agent: Improve planning step with pedagogical principles
 - Revisar esquemas de herramientas educativas
 - Testear integración de memoria
 
-**El sistema agéntico de Atomia representa la próxima generación de educación personalizada, donde agentes inteligentes razonan, recuerdan y adaptan continuamente para optimizar el aprendizaje de cada estudiante.** 
+**El sistema agéntico de Atomia representa la próxima generación de educación personalizada, donde agentes inteligentes razonan, recuerdan y adaptan continuamente para optimizar el aprendizaje de cada estudiante.**
+
+## 🐳 INICIO DEL PROYECTO CON DOCKER (ACTUALIZADO)
+
+### **🚀 Inicio Completo del Sistema**
+
+**Prerrequisitos:**
+- Docker y Docker Compose instalados
+- Git para clonar el repositorio
+- Variable de entorno AZURE_AI_KEY configurada
+
+```bash
+# 1. Clonar el repositorio
+git clone <repository-url>
+cd Atomia
+
+# 2. Configurar variable de entorno LLM
+export AZURE_AI_KEY="your-azure-ai-key-here"
+
+# 3. Iniciar todo el sistema con un solo comando
+docker-compose up -d --build
+
+# 4. Verificar estado de servicios
+docker-compose ps
+
+# 5. Ver logs si es necesario
+docker-compose logs -f [servicio]
+```
+
+### **📊 Arquitectura Dockerizada Completa**
+
+```yaml
+# docker-compose.yml - Sistema completo containerizado
+services:
+  # 🗄️ INFRAESTRUCTURA
+  postgres:     # Base de datos principal (Puerto 5432)
+  mongodb:      # Almacenamiento de átomos (Puerto 27017)
+  redis:        # Cache y memoria (Puerto 6379)
+  neo4j:        # Grafo de conocimiento (Puerto 7474, 7687)
+  rabbitmq:     # Cola de mensajes (Puerto 5672, 15672)
+  
+  # 🔧 SERVICIOS BACKEND
+  llm_orchestrator:  # Sistema agéntico principal (Puerto 8002)
+  atomization:       # Procesamiento de contenido (Puerto 8001)
+  evaluation:        # Motor de evaluación (Puerto 8003)
+  planning:          # Planificador adaptativo (Puerto 8004)
+  questions:         # Generador de preguntas (Puerto 8005)
+  gamification:      # Sistema de adherencia (Puerto 8006)
+  authentication:    # Autenticación y autorización (Puerto 8007)
+  
+  # 🌐 FRONTEND
+  frontend:         # Aplicación Flutter Web (Puerto 3000)
+```
+
+### **🌐 Enlaces de Acceso**
+
+Una vez iniciado el sistema, puedes acceder a:
+
+| Servicio | URL | Descripción |
+|----------|-----|-------------|
+| **Aplicación Principal** | http://localhost:3000 | Frontend Flutter Web |
+| **API Documentation** | http://localhost:8002/docs | Documentación LLM Orchestrator |
+| **Neo4j Browser** | http://localhost:7474 | Interfaz gráfica del grafo |
+| **RabbitMQ Management** | http://localhost:15672 | Admin de colas (guest/guest) |
+
+### **🔧 Comandos de Gestión**
+
+```bash
+# Iniciar todo el sistema
+docker-compose up -d
+
+# Parar todo el sistema
+docker-compose down
+
+# Reiniciar un servicio específico
+docker-compose restart [servicio]
+
+# Ver logs de un servicio
+docker-compose logs -f [servicio]
+
+# Rebuild y reiniciar
+docker-compose up -d --build
+
+# Ver estado de todos los servicios
+docker-compose ps
+
+# Acceder a shell de un contenedor
+docker-compose exec [servicio] bash
+```
+
+### **🔍 Troubleshooting**
+
+```bash
+# Verificar que todos los servicios estén corriendo
+docker-compose ps
+
+# Ver logs de servicios que fallaron
+docker-compose logs [servicio-que-fallo]
+
+# Reiniciar servicios con problemas
+docker-compose restart [servicio]
+
+# Limpiar y rebuild completo
+docker-compose down
+docker system prune -f
+docker-compose up -d --build
+
+# Verificar puertos ocupados
+ss -tlnp | grep -E "(3000|8001|8002|8003|8004|8005|8006|8007)"
+```
+
+### **📱 Frontend Flutter Dockerizado**
+
+**Dockerfile personalizado para Flutter Web:**
+```dockerfile
+FROM cirrusci/flutter:stable
+RUN flutter config --enable-web
+WORKDIR /app
+COPY pubspec.yaml pubspec.lock ./
+RUN flutter pub get
+COPY . .
+EXPOSE 3000
+CMD ["flutter", "run", "-d", "web-server", "--web-port", "3000", "--web-hostname", "0.0.0.0", "--release"]
+```
+
+**Variables de entorno para conectar con backend:**
+```yaml
+environment:
+  LLM_ORCHESTRATOR_URL: http://llm_orchestrator:8002
+  ATOMIZATION_URL: http://atomization:8001
+  EVALUATION_URL: http://evaluation:8003
+  PLANNING_URL: http://planning:8004
+  QUESTIONS_URL: http://questions:8005
+```
+
+### **⚠️ Notas Importantes**
+
+1. **Primera ejecución**: El primer `docker-compose up` puede tardar varios minutos en descargar y construir todas las imágenes.
+
+2. **Variables de entorno**: Asegúrate de tener `AZURE_AI_KEY` configurada para el LLM.
+
+3. **Recursos del sistema**: El sistema completo requiere al menos 4GB de RAM disponible.
+
+4. **Persistencia de datos**: Los volúmenes Docker mantienen los datos entre reinicios:
+   - `postgres_data`: Datos de PostgreSQL
+   - `mongo_data`: Datos de MongoDB  
+   - `neo4j_data`: Datos de Neo4j
+   - `redis_data`: Datos de Redis
+   - `rabbitmq_data`: Datos de RabbitMQ
+
+5. **Hot reload**: Flutter en modo release no tiene hot reload. Para desarrollo, ejecutar Flutter localmente.
+
+### **🔄 Flujo de Desarrollo**
+
+```bash
+# Desarrollo de backend
+docker-compose up -d postgres mongodb redis neo4j rabbitmq  # Solo infra
+# Ejecutar servicios backend localmente para desarrollo
+
+# Desarrollo de frontend  
+docker-compose up -d  # Todo el sistema
+cd frontend
+flutter run -d web-server --web-port 3001  # Puerto diferente para dev
+```
+
+### **🎯 Estado del Sistema Completo**
+
+- ✅ **Infraestructura**: PostgreSQL, MongoDB, Redis, Neo4j, RabbitMQ
+- ✅ **Backend**: 7 microservicios agénticos completamente dockerizados
+- ✅ **Frontend**: Flutter Web dockerizado con hot reload opcional
+- ✅ **Orquestación**: docker-compose.yml completo y funcional
+- ✅ **Configuración**: Variables de entorno y redes automáticas
+- ✅ **Persistencia**: Volúmenes para todos los datos importantes
+
+**¡Todo el sistema Atomia ahora se inicia con un solo comando Docker Compose!** 🎉 

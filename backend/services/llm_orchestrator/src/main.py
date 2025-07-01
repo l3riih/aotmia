@@ -155,6 +155,21 @@ async def process_agent_task(request: AgentTaskRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/")
+async def root():
+    """Root endpoint with basic service status."""
+    return {
+        "service": "llm_orchestrator",
+        "version": app.version,
+        "status": "operational",
+        "features": {
+            "agentic_reasoning": True,
+            "workflow": "Plan-Execute-Observe-Reflect",
+            "tools": orchestrator.get_registered_tools() if hasattr(orchestrator, "get_registered_tools") else [],
+        },
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8002) 

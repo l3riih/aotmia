@@ -67,4 +67,14 @@ class AtomizationTaskRequest(BaseModel):
     query: str
     user_id: Optional[str] = None
     task_type: str = "ATOMIZATION"
-    context: Dict[str, Any] = Field(default_factory=lambda: {}) 
+    context: Dict[str, Any] = Field(default_factory=lambda: {})
+
+
+class PipelineResponse(BaseModel):
+    """Respuesta del pipeline de atomización completo"""
+    success: bool
+    atoms: List[Dict[str, Any]] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=lambda: {})
+    metrics: Dict[str, Any] = Field(default_factory=lambda: {})
+    metrics_report: str = ""
+    error: Optional[str] = None 

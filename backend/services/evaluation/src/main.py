@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import make_asgi_app
 import structlog
+import os
 
 from .core.config import settings
 from .core.logging import configure_logging
@@ -73,6 +74,19 @@ async def startup_event():
                 )
     except Exception as e:
         logger.error("Failed to connect to LLM Orchestrator", error=str(e))
+
+    # Ejecutar migraciones Alembic (upgrade head)
+    try:
+        from alembic import command, config as alembic_config
+        alembic_cfg = alembic_config.Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
+        # Asegurarse de que Alembic conozca la ruta de migrations y la URL
+        migrations_path = os.path.join(os.path.dirname(__file__), "..", "migrations")
+        alembic_cfg.set_main_option("script_location", migrations_path)
+        alembic_cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL or settings.postgres_url)
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Alembic migrations applied")
+    except Exception as mig_err:
+        logger.warning("Failed to apply Alembic migrations", error=str(mig_err))
 
 
 @app.on_event("shutdown")
