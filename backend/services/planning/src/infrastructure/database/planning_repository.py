@@ -111,7 +111,7 @@ class PostgresPlanningRepository:
             result = await session.execute(stmt)
             row = result.fetchone()
             if not row:
-                return None
+        return None
             record = dict(row._mapping)
             return LearningPlanResponse(**record["plan_json"])
 
@@ -174,9 +174,9 @@ class PostgresPlanningRepository:
             active_plans = len(active.fetchall())
             completed = await session.execute(select(learning_plans_table.c.plan_id).where(learning_plans_table.c.status == "completed"))
             adapted = await session.execute(select(learning_plans_table.c.plan_id).where(learning_plans_table.c.status == "adapted"))
-            return {
-                "total_plans": total_plans,
-                "active_plans": active_plans,
+        return {
+            "total_plans": total_plans,
+            "active_plans": active_plans,
                 "completed_plans": len(completed.fetchall()),
                 "adapted_plans": len(adapted.fetchall()),
-            } 
+        } 

@@ -70,9 +70,9 @@ class AgenticPlanningService:
             )
             
             try:
-                agent_result = await self.agentic_orchestrator.process_educational_task(
-                    planning_task
-                )
+            agent_result = await self.agentic_orchestrator.process_educational_task(
+                planning_task
+            )
             except Exception as e:
                 logger.warning("Orchestrator failed, using fallback", error=str(e))
                 # Fallback para testing - simulación de respuesta del agente

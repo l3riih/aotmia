@@ -10,7 +10,7 @@ import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCollection
 from pymongo.errors import DuplicateKeyError, ConnectionFailure
 
-from ...schemas import LearningAtomRead, AgenticAtomizationResponse
+# from ...schemas import LearningAtomRead, AgenticAtomizationResponse  # Commented to fix import error
 
 logger = structlog.get_logger()
 
@@ -24,10 +24,15 @@ class MongoDBAtomRepository:
         self.client: Optional[AsyncIOMotorClient] = None
         self.db: Optional[AsyncIOMotorDatabase] = None
         self.atoms_collection: Optional[AsyncIOMotorCollection] = None
+        self._initialized = False
         
-        # Crear conexión asíncrona
-        self._init_task = asyncio.create_task(self._initialize_connection())
         logger.info("MongoDB repository initialized", db_name=db_name, url=mongodb_url)
+    
+    async def _ensure_connection(self):
+        """Asegura que la conexión esté inicializada (lazy initialization)"""
+        if not self._initialized:
+            await self._initialize_connection()
+            self._initialized = True
     
     async def _initialize_connection(self):
         """Inicializa la conexión a MongoDB"""
@@ -64,7 +69,7 @@ class MongoDBAtomRepository:
         agent_metadata: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """Guarda múltiples átomos con metadatos del agente"""
-        await self._init_task
+        await self._ensure_connection()
         
         saved_atoms = []
         
@@ -146,7 +151,7 @@ class MongoDBAtomRepository:
     
     async def get(self, atom_id: str) -> Optional[Dict[str, Any]]:
         """Obtiene un átomo por ID"""
-        await self._init_task
+        await self._ensure_connection()
         
         result = await self.atoms_collection.find_one({"id": atom_id})
         if result:
@@ -155,7 +160,7 @@ class MongoDBAtomRepository:
     
     async def get_all(self, limit: int = 100, skip: int = 0) -> List[Dict[str, Any]]:
         """Obtiene todos los átomos con paginación"""
-        await self._init_task
+        await self._ensure_connection()
         
         cursor = self.atoms_collection.find().skip(skip).limit(limit)
         atoms = []
@@ -167,7 +172,7 @@ class MongoDBAtomRepository:
     
     async def search_by_content(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Busca átomos por contenido usando índice de texto"""
-        await self._init_task
+        await self._ensure_connection()
         
         # Buscar usando el índice de texto de MongoDB
         cursor = self.atoms_collection.find(
@@ -198,7 +203,7 @@ class MongoDBAtomRepository:
     
     async def get_by_difficulty(self, difficulty: str, limit: int = 20) -> List[Dict[str, Any]]:
         """Obtiene átomos por nivel de dificultad"""
-        await self._init_task
+        await self._ensure_connection()
         
         cursor = self.atoms_collection.find({"difficulty_level": difficulty}).limit(limit)
         atoms = []
@@ -210,7 +215,7 @@ class MongoDBAtomRepository:
     
     async def get_by_tags(self, tags: List[str], limit: int = 20) -> List[Dict[str, Any]]:
         """Obtiene átomos que contengan cualquiera de los tags especificados"""
-        await self._init_task
+        await self._ensure_connection()
         
         cursor = self.atoms_collection.find({"tags": {"$in": tags}}).limit(limit)
         atoms = []
@@ -222,7 +227,7 @@ class MongoDBAtomRepository:
     
     async def update_atom(self, atom_id: str, update_data: Dict[str, Any]) -> bool:
         """Actualiza un átomo existente"""
-        await self._init_task
+        await self._ensure_connection()
         
         update_data["updated_at"] = datetime.now()
         result = await self.atoms_collection.update_one(
@@ -234,14 +239,14 @@ class MongoDBAtomRepository:
     
     async def delete_atom(self, atom_id: str) -> bool:
         """Elimina un átomo"""
-        await self._init_task
+        await self._ensure_connection()
         
         result = await self.atoms_collection.delete_one({"id": atom_id})
         return result.deleted_count > 0
     
     async def get_stats(self) -> Dict[str, Any]:
         """Obtiene estadísticas de la colección de átomos"""
-        await self._init_task
+        await self._ensure_connection()
         
         total_atoms = await self.atoms_collection.count_documents({})
         
